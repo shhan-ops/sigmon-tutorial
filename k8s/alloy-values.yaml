@@ -18,6 +18,10 @@ controller:
 #   HTTP OTLP: alloy.monitoring.svc.cluster.local:4318
 # ----------------------------------------------------------------
 alloy:
+  # otelcol.exporter.debug 컴포넌트는 "experimental" 등급이다.
+  # Alloy 기본값은 "generally-available" 만 허용하므로 명시적으로 낮춰야 한다.
+  stabilityLevel: experimental
+
   extraPorts:
     - name: otlp-grpc
       port: 4317

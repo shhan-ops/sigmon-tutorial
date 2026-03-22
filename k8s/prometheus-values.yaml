@@ -74,6 +74,23 @@ kube-state-metrics:
       cpu: 100m
 
 # ----------------------------------------------------------------
+# node-exporter
+# Minikube 노드에 테인트가 있을 경우 DaemonSet이 스케줄되지 않아
+# helm install --wait 가 timeout 된다.
+# tolerations: Exists 로 모든 테인트를 허용한다.
+# ----------------------------------------------------------------
+prometheus-node-exporter:
+  tolerations:
+    - operator: Exists   # 모든 테인트 허용 (Minikube control-plane 포함)
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      memory: 64Mi
+      cpu: 50m
+
+# ----------------------------------------------------------------
 # Minikube 환경에서 접근 불가한 컨트롤 플레인 컴포넌트 비활성화
 # (활성화 시 "connection refused" 스크레이프 에러 발생)
 # ----------------------------------------------------------------
