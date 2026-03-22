@@ -1,0 +1,90 @@
+# ================================================================
+# kube-prometheus-stack - Minikube 최소 설정
+# 대상 환경: 단일 노드, 6GB RAM, 3 CPU
+# ================================================================
+
+# Alertmanager 비활성화 - 학습 환경에서 불필요 (~200MB RAM 절약)
+alertmanager:
+  enabled: false
+
+# ----------------------------------------------------------------
+# Grafana
+# ----------------------------------------------------------------
+grafana:
+  enabled: true
+  adminPassword: admin
+
+  service:
+    type: NodePort   # Minikube에서 브라우저 접근 시 필요
+
+  # 재시작 시 초기화되어도 무방한 학습 환경
+  persistence:
+    enabled: false
+
+  # Loki 데이터소스 자동 등록 (Explore에서 바로 로그 조회 가능)
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki.monitoring.svc.cluster.local:3100
+      access: proxy
+      isDefault: false
+
+# ----------------------------------------------------------------
+# Prometheus
+# ----------------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    retention: 24h   # 디스크 사용량 최소화
+
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 200m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+
+    # 모든 네임스페이스의 ServiceMonitor / PodMonitor 수집
+    # (NestJS 앱 배포 후 /metrics 스크레이프에 필요)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+# ----------------------------------------------------------------
+# Prometheus Operator
+# ----------------------------------------------------------------
+prometheusOperator:
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+# ----------------------------------------------------------------
+# kube-state-metrics: Pod / Deployment 상태 메트릭 수집
+# ----------------------------------------------------------------
+kube-state-metrics:
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 10m
+    limits:
+      memory: 128Mi
+      cpu: 100m
+
+# ----------------------------------------------------------------
+# Minikube 환경에서 접근 불가한 컨트롤 플레인 컴포넌트 비활성화
+# (활성화 시 "connection refused" 스크레이프 에러 발생)
+# ----------------------------------------------------------------
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+kubeEtcd:
+  enabled: false

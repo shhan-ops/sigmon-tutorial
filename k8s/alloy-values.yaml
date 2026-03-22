@@ -1,0 +1,122 @@
+# ================================================================
+# Grafana Alloy - 로그 수집 + OTLP 수신기
+# 역할:
+#   1. Kubernetes Pod 로그 수집 → Loki 전달
+#   2. OTLP 수신 (NestJS 앱의 트레이스/메트릭) → 디버그 출력
+# ================================================================
+
+# Deployment 방식 사용
+# loki.source.kubernetes는 K8s API로 로그를 읽으므로 DaemonSet 불필요
+controller:
+  type: deployment
+  replicas: 1
+
+# ----------------------------------------------------------------
+# 추가 포트 설정
+# NestJS 앱의 OpenTelemetry SDK가 이 포트로 데이터를 전송한다.
+#   HTTP gRPC: alloy.monitoring.svc.cluster.local:4317
+#   HTTP OTLP: alloy.monitoring.svc.cluster.local:4318
+# ----------------------------------------------------------------
+alloy:
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+  # ----------------------------------------------------------------
+  # Alloy River 파이프라인 설정
+  # ----------------------------------------------------------------
+  configMap:
+    content: |
+      // ============================================================
+      // [1] Kubernetes Pod 로그 수집
+      // K8s API를 통해 모든 네임스페이스의 Pod 로그를 스트리밍하고
+      // Loki로 전달한다. (파일시스템 마운트 불필요)
+      // ============================================================
+
+      // 클러스터 내 모든 Pod 발견
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      // Pod 메타데이터를 Loki 스트림 라벨로 변환
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+
+        // 이미 종료된 파드는 제외 (불필요한 API 호출 방지)
+        rule {
+          source_labels = ["__meta_kubernetes_pod_phase"]
+          regex         = "Succeeded|Failed"
+          action        = "drop"
+        }
+
+        // Loki에서 네임스페이스 / 파드 / 컨테이너로 필터링할 수 있도록 라벨 추가
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+      }
+
+      // K8s API로 Pod 로그 스트리밍 후 Loki로 전달
+      loki.source.kubernetes "pod_logs" {
+        targets    = discovery.relabel.pod_logs.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      // Loki 쓰기 엔드포인트 (gateway 비활성화 → 직접 3100 포트 접근)
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+      // ============================================================
+      // [2] OTLP 수신기
+      // NestJS 앱의 OpenTelemetry SDK에서 트레이스/메트릭을 수신한다.
+      // instrumentation.ts 의 OTLP_ENDPOINT 와 일치해야 한다.
+      //   HTTP : http://alloy.monitoring.svc.cluster.local:4318
+      //   gRPC : alloy.monitoring.svc.cluster.local:4317
+      // ============================================================
+
+      otelcol.receiver.otlp "default" {
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+
+        output {
+          // 수신된 트레이스/메트릭을 디버그 익스포터로 전달
+          // Tempo 추가 시 otelcol.exporter.otlphttp 로 교체
+          traces  = [otelcol.exporter.debug.default.input]
+          metrics = [otelcol.exporter.debug.default.input]
+        }
+      }
+
+      // 수신된 데이터를 Alloy 자체 로그로 출력 (학습용 디버그 익스포터)
+      // kubectl logs 로 수신 여부를 바로 확인할 수 있다.
+      otelcol.exporter.debug "default" {
+        verbosity = "basic"
+      }
+
+# Pod 로그 접근을 위한 ClusterRole / ServiceAccount 생성
+serviceAccount:
+  create: true

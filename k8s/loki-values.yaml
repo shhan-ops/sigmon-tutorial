@@ -1,0 +1,113 @@
+# ================================================================
+# Loki - SingleBinary 모드 (단일 노드, 학습용)
+# 스케일러블(분산) 모드 비활성화 / 내부 MinIO를 오브젝트 스토리지로 사용
+# ================================================================
+
+# SingleBinary: 모든 Loki 컴포넌트를 하나의 프로세스로 실행
+deploymentMode: SingleBinary
+
+# ----------------------------------------------------------------
+# Loki 핵심 설정
+# ----------------------------------------------------------------
+loki:
+  # 인증 비활성화 (학습 환경 - 멀티 테넌트 불필요)
+  auth_enabled: false
+
+  commonConfig:
+    replication_factor: 1   # 단일 인스턴스이므로 복제 불필요
+
+  # S3 호환 스토리지 설정 (내부 MinIO 사용)
+  storage:
+    type: s3
+    bucketNames:
+      chunks: chunks   # 실제 로그 데이터
+      ruler: ruler     # 알림 룰
+      admin: admin     # 관리 데이터
+    s3:
+      # MinIO 서비스 주소 (릴리즈 이름 loki 기준)
+      endpoint: http://loki-minio.monitoring.svc.cluster.local:9000
+      region: us-east-1
+      accessKeyId: loki
+      secretAccessKey: supersecret
+      s3ForcePathStyle: true   # MinIO는 경로 기반 접근 필요
+      insecure: true           # TLS 미사용 (내부 통신)
+
+  # 인덱스 스키마 v13 (TSDB) - Loki 3.x 권장 설정
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+# ----------------------------------------------------------------
+# SingleBinary 인스턴스 설정
+# ----------------------------------------------------------------
+singleBinary:
+  replicas: 1
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 300m
+
+  # 파드 재시작 시 데이터 초기화 허용 (학습 환경)
+  persistence:
+    enabled: false
+
+# ----------------------------------------------------------------
+# 스케일러블 모드 컴포넌트 전체 비활성화
+# (SingleBinary와 동시에 실행되면 충돌 발생)
+# ----------------------------------------------------------------
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# ----------------------------------------------------------------
+# 게이트웨이(nginx) 비활성화
+# Alloy에서 직접 포트 3100으로 접근
+# ----------------------------------------------------------------
+gateway:
+  enabled: false
+
+# ----------------------------------------------------------------
+# MinIO - 클러스터 내부 오브젝트 스토리지
+# 외부 S3/GCS 없이 로컬에서 동작
+# ----------------------------------------------------------------
+minio:
+  enabled: true
+  rootUser: loki
+  rootPassword: supersecret
+
+  # Loki가 사용할 버킷 자동 생성
+  buckets:
+    - name: chunks
+      policy: none
+      purge: false
+    - name: ruler
+      policy: none
+      purge: false
+    - name: admin
+      policy: none
+      purge: false
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 200m
+
+  # 파드 재시작 시 데이터 초기화 허용 (학습 환경)
+  persistence:
+    enabled: false
