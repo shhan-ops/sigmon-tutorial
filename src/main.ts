@@ -8,21 +8,20 @@
 import './telemetry/instrumentation';
 
 import { NestFactory } from '@nestjs/core';
-import { Logger } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    // 모든 로그 레벨을 stdout으로 출력 (k8s에서 Loki가 stdout을 수집)
-    logger: ['log', 'warn', 'error', 'debug', 'verbose'],
+    // 부트스트랩 전 NestJS 기본 로거를 비활성화 (Winston이 대체)
+    bufferLogs: true,
   });
 
-  // 전역 예외 필터 등록 — 구조화된 JSON 로그 출력 및 적절한 HTTP 상태 코드 반환
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // NestJS 전체 로거를 Winston으로 교체
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
-  await app.listen(3000);
-  Logger.log('Listening on port 3000', 'Bootstrap');
+  const port = process.env.PORT ?? 8080;
+  await app.listen(port);
 }
 
 bootstrap();

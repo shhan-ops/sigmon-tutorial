@@ -1,5 +1,6 @@
-import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { Injectable, NestMiddleware, Inject, LoggerService } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Counter, Histogram } from 'prom-client';
 
 /**
@@ -28,7 +29,10 @@ const httpRequestDurationSeconds = new Histogram({
 
 @Injectable()
 export class LoggingMiddleware implements NestMiddleware {
-  private readonly logger = new Logger('HTTP');
+  constructor(
+    @Inject(WINSTON_MODULE_NEST_PROVIDER)
+    private readonly logger: LoggerService,
+  ) {}
 
   use(req: Request, res: Response, next: NextFunction) {
     const { method } = req;
@@ -42,15 +46,9 @@ export class LoggingMiddleware implements NestMiddleware {
       // 라우트 패턴(/users/:id)을 사용한다.
       const route: string = (req.route?.path as string) ?? req.path;
 
-      // 구조화된 stdout 로그 — Loki 라벨 추출과 호환되는 JSON 형식
       this.logger.log(
-        JSON.stringify({
-          method,
-          path: req.path,
-          route,
-          statusCode,
-          durationMs,
-        }),
+        { method, path: req.path, route, statusCode, durationMs },
+        'HTTP',
       );
 
       const labels = { method, route, status_code: String(statusCode) };

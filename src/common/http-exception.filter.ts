@@ -4,9 +4,11 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
-  Logger,
+  Inject,
+  LoggerService,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 /**
  * 전역 예외 필터.
@@ -15,7 +17,10 @@ import { Request, Response } from 'express';
  */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
+  constructor(
+    @Inject(WINSTON_MODULE_NEST_PROVIDER)
+    private readonly logger: LoggerService,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -32,15 +37,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const stack = exception instanceof Error ? exception.stack : undefined;
 
-    // 구조화된 에러 로그 — 모든 필드를 최상위에 두어 Loki에서 라벨로 필터링 가능
     this.logger.error(
-      JSON.stringify({
-        message,
-        stack,
-        path: req.url,
-        statusCode: status,
-        timestamp: new Date().toISOString(),
-      }),
+      { message, path: req.url, statusCode: status, timestamp: new Date().toISOString() },
+      stack,
+      HttpExceptionFilter.name,
     );
 
     res.status(status).json({

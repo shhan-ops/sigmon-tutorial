@@ -5,10 +5,14 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",
-    "start:dev": "nest start --watch"
+    "start:dev": "nest start --watch",
+    "k6:1min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-1min.js",
+    "k6:3min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-3min.js",
+    "k6:5min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-5min.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",
+    "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^10.4.0",
     "@nestjs/platform-express": "^10.4.0",
     "@opentelemetry/auto-instrumentations-node": "^0.53.0",
@@ -18,9 +22,11 @@
     "@opentelemetry/sdk-metrics": "^1.30.0",
     "@opentelemetry/sdk-node": "^0.57.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "nest-winston": "^1.10.2",
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
