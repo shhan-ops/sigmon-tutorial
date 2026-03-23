@@ -1,0 +1,80 @@
+# ================================================================
+# NestJS 앱 배포 매니페스트
+# ================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nestjs-app
+  namespace: default
+  labels:
+    app: nestjs-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nestjs-app
+  template:
+    metadata:
+      labels:
+        app: nestjs-app
+    spec:
+      containers:
+        - name: nestjs-app
+          image: nestjs-app:latest
+          # Minikube 로컬 이미지 사용 시 Pull 금지
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: LOG_LEVEL
+              value: "info"
+          readinessProbe:
+            httpGet:
+              path: /hello
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /hello
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nestjs-app
+  namespace: default
+  labels:
+    app: nestjs-app
+spec:
+  selector:
+    app: nestjs-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+---
+# Prometheus가 /metrics 를 자동 스크레이프하도록 설정
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nestjs-app
+  namespace: default
+  labels:
+    app: nestjs-app
+spec:
+  selector:
+    matchLabels:
+      app: nestjs-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

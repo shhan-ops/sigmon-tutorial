@@ -6,6 +6,11 @@
     "build": "nest build",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
+    "docker:build": "eval $(minikube docker-env) && docker build -t nestjs-app:latest .",
+    "k8s:deploy": "kubectl apply -f k8s/app.yaml",
+    "k8s:delete": "kubectl delete -f k8s/app.yaml",
+    "k8s:logs": "kubectl logs -l app=nestjs-app -f",
+    "k8s:restart": "kubectl rollout restart deployment/nestjs-app",
     "k6:1min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-1min.js",
     "k6:3min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-3min.js",
     "k6:5min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-5min.js"
