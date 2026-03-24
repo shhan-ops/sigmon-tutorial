@@ -214,11 +214,26 @@ Alloy가 Pod stdout을 수집해 Loki로 전달한다.
 
 ### 사전 조건
 
-| 도구 | 버전 |
-|---|---|
-| minikube | v1.32+ |
-| kubectl | v1.28+ |
-| helm | v3.14+ |
+| 도구 | 버전 | 비고 |
+|---|---|---|
+| Docker Desktop | 4.x+ | macOS 필수 — Minikube docker 드라이버 |
+| minikube | v1.32+ | |
+| kubectl | v1.28+ | |
+| helm | v3.14+ | |
+
+> **macOS — Docker Desktop 메모리 설정 필수**
+>
+> macOS에서 Minikube는 Docker Desktop을 드라이버로 사용한다.
+> `minikube start --memory=8192` 는 Minikube VM에 8GB를 **요청**하는 옵션이지만,
+> Docker Desktop 자체에 할당된 메모리가 충분하지 않으면 실제로 8GB를 확보할 수 없다.
+>
+> `grafana/loki` 차트는 기본값으로 `chunksCache`(memcached)를 활성화하며,
+> 이 컨테이너의 리소스 요청값이 **9830Mi(약 9.8GB)** 로 설정되어 있다.
+> Docker Desktop 메모리가 부족하면 Minikube가 8GB를 확보하지 못하고,
+> `loki-chunks-cache-0` 파드가 `Insufficient memory` 로 `Pending` 상태에 빠진다.
+>
+> **설정 경로:** Docker Desktop → Settings → Resources → Memory
+> → **12 GB 이상**으로 설정 후 Apply & Restart
 
 ### 설치 순서
 
@@ -237,6 +252,8 @@ flowchart TD
 ```
 
 ### 1단계 — Minikube 시작
+
+> Docker Desktop을 먼저 실행하고, **Settings → Resources → Memory** 가 12GB 이상인지 확인한다.
 
 ```bash
 minikube start --memory=8192 --cpus=4
