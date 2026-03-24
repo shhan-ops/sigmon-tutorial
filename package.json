@@ -11,9 +11,17 @@
     "k8s:delete": "kubectl delete -f k8s/app.yaml",
     "k8s:logs": "kubectl logs -l app=nestjs-app -f",
     "k8s:restart": "kubectl rollout restart deployment/nestjs-app",
+    "k8s:redeploy": "npm run docker:build && npm run k8s:restart",
+    "k8s:grafana:restart":"kubectl rollout restart deployment/prometheus-grafana -n monitoring",
     "k6:1min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-1min.js",
     "k6:3min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-3min.js",
-    "k6:5min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-5min.js"
+    "k6:5min": "k6 run $(cat k6/config.env | sed 's/^/--env /' | tr '\\n' ' ') ./k6/test-5min.js",
+    "pf:app": "kubectl port-forward svc/nestjs-app 8080:8080",
+    "pf:grafana": "kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring",
+    "pf:prometheus": "kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n monitoring",
+    "pf:loki": "kubectl port-forward svc/loki 3100:3100 -n monitoring",
+    "pf:tempo": "kubectl port-forward svc/tempo 3200:3200 -n monitoring",
+    "pf:alloy": "kubectl port-forward svc/alloy 12345:12345 -n monitoring"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

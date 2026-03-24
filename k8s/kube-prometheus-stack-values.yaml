@@ -21,13 +21,43 @@ grafana:
   persistence:
     enabled: false
 
-  # Loki 데이터소스 자동 등록 (Explore에서 바로 로그 조회 가능)
+  # Drilldown 앱 플러그인
+  # grafana-traces-app : Traces Drilldown (트레이스 탐색)
+  # grafana-logs-app   : Logs Drilldown (로그 탐색)
+  # grafana-metrics-app: Metrics Drilldown (메트릭 탐색)
+  plugins:
+    - grafana-traces-app
+    - grafana-logs-app
+    - grafana-metrics-app
+
+  # 데이터소스 자동 등록 (Explore에서 바로 조회 가능)
   additionalDataSources:
     - name: Loki
+      uid: loki
       type: loki
       url: http://loki.monitoring.svc.cluster.local:3100
       access: proxy
       isDefault: false
+
+    - name: Tempo
+      uid: tempo
+      type: tempo
+      url: http://tempo.monitoring.svc.cluster.local:3200
+      access: proxy
+      isDefault: false
+      jsonData:
+        # 트레이스 상세 → Node Graph 시각화
+        nodeGraph:
+          enabled: true
+        # Tempo 트레이스에서 Loki 로그로 바로 이동 (TraceID 연동)
+        tracesToLogsV2:
+          datasourceUid: loki
+        # Tempo 트레이스에서 Prometheus 메트릭으로 바로 이동
+        tracesToMetrics:
+          datasourceUid: prometheus
+        # Service Graph — metrics generator가 Prometheus에 write한 데이터 조회
+        serviceMap:
+          datasourceUid: prometheus
 
 # ----------------------------------------------------------------
 # Prometheus
@@ -35,6 +65,9 @@ grafana:
 prometheus:
   prometheusSpec:
     retention: 24h   # 디스크 사용량 최소화
+
+    # Tempo metrics generator → Prometheus remote write 수신 허용
+    enableRemoteWriteReceiver: true
 
     resources:
       requests:

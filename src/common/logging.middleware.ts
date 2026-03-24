@@ -2,6 +2,7 @@ import { Injectable, NestMiddleware, Inject, LoggerService } from '@nestjs/commo
 import { Request, Response, NextFunction } from 'express';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Counter, Histogram } from 'prom-client';
+import { trace } from '@opentelemetry/api';
 
 /**
  * Prometheus 메트릭 — 모듈 스코프에 정의하여 한 번만 등록되도록 한다.
@@ -38,6 +39,10 @@ export class LoggingMiddleware implements NestMiddleware {
     const { method } = req;
     const startMs = Date.now();
 
+    // res.on('finish') 시점에는 OTel span이 이미 종료되어 있을 수 있다.
+    // 요청이 시작되는 이 시점에 traceId를 미리 캡처해 finish 콜백에서 사용한다.
+    const traceId = trace.getActiveSpan()?.spanContext().traceId;
+
     res.on('finish', () => {
       const statusCode = res.statusCode;
       const durationMs = Date.now() - startMs;
@@ -47,7 +52,7 @@ export class LoggingMiddleware implements NestMiddleware {
       const route: string = (req.route?.path as string) ?? req.path;
 
       this.logger.log(
-        { method, path: req.path, route, statusCode, durationMs },
+        { method, path: req.path, route, statusCode, durationMs, traceId },
         'HTTP',
       );
 

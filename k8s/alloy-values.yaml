@@ -2,7 +2,9 @@
 # Grafana Alloy - 로그 수집 + OTLP 수신기
 # 역할:
 #   1. Kubernetes Pod 로그 수집 → Loki 전달
-#   2. OTLP 수신 (NestJS 앱의 트레이스/메트릭) → 디버그 출력
+#   2. OTLP 수신 (NestJS 앱의 트레이스/메트릭)
+#      - 트레이스 → Tempo 전달
+#      - 메트릭  → 디버그 출력 (kubectl logs로 수신 확인용)
 # ================================================================
 
 # Deployment 방식 사용
@@ -108,15 +110,25 @@ alloy:
         }
 
         output {
-          // 수신된 트레이스/메트릭을 디버그 익스포터로 전달
-          // Tempo 추가 시 otelcol.exporter.otlphttp 로 교체
-          traces  = [otelcol.exporter.debug.default.input]
+          // 트레이스 → Tempo (OTLP gRPC)
+          traces  = [otelcol.exporter.otlp.tempo.input]
+          // 메트릭 → 디버그 출력 (kubectl logs 로 수신 여부 확인)
           metrics = [otelcol.exporter.debug.default.input]
         }
       }
 
-      // 수신된 데이터를 Alloy 자체 로그로 출력 (학습용 디버그 익스포터)
-      // kubectl logs 로 수신 여부를 바로 확인할 수 있다.
+      // 트레이스 익스포터: Alloy → Tempo
+      // Tempo는 OTLP gRPC 4317 포트로 수신한다.
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.monitoring.svc.cluster.local:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
+
+      // 메트릭 디버그 익스포터 — kubectl logs 로 수신 여부를 바로 확인할 수 있다.
       otelcol.exporter.debug "default" {
         verbosity = "basic"
       }
