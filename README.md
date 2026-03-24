@@ -29,14 +29,17 @@ flowchart LR
     subgraph monitoring["☸ namespace: monitoring"]
         ALLOY["Grafana Alloy<br/>:4317 gRPC · :4318 HTTP"]
         LOKI[("Loki<br/>SingleBinary · :3100")]
+        TEMPO[("Tempo<br/>Monolithic · :3200")]
         MINIO[("MinIO<br/>:9000")]
         PROM[("Prometheus<br/>:9090")]
         GRAFANA[["Grafana<br/>:3000 NodePort"]]
 
         ALLOY -->|"log push"| LOKI
+        ALLOY -->|"traces OTLP gRPC"| TEMPO
         LOKI -->|"read / write"| MINIO
         PROM --> GRAFANA
         LOKI --> GRAFANA
+        TEMPO --> GRAFANA
     end
 
     APP -->|"OTLP<br/>traces · metrics"| ALLOY
@@ -47,10 +50,51 @@ flowchart LR
 | 컴포넌트 | 역할 | 포트 |
 |---|---|---|
 | NestJS App | 샘플 HTTP 서버 (메트릭 / 로그 / 트레이스 생성) | 8080 |
-| Grafana Alloy | Pod 로그 수집 → Loki, OTLP 수신기 | 4317 (gRPC), 4318 (HTTP) |
+| Grafana Alloy | Pod 로그 수집 → Loki, OTLP 수신 → Tempo | 4317 (gRPC), 4318 (HTTP) |
 | Loki | 로그 집계 및 저장 (MinIO 백엔드) | 3100 |
+| Tempo | 트레이스 수집 및 저장 (로컬 스토리지) | 3200 (HTTP), 4317 (OTLP) |
 | Prometheus | 메트릭 수집 및 저장 | 9090 |
-| Grafana | 메트릭 / 로그 시각화 | 3000 (NodePort) |
+| Grafana | 메트릭 / 로그 / 트레이스 시각화 | 3000 (NodePort) |
+
+### Alloy를 사용하는 이유 — Promtail과의 비교
+
+Grafana Alloy는 **Promtail의 공식 후속 도구**다.
+Promtail은 2024년 deprecated 선언되었으며, Grafana는 Alloy로의 마이그레이션을 권장한다.
+
+**Promtail만 사용할 때의 구성:**
+
+```
+[로그]   Promtail      → Loki
+[트레이스] OTel Collector → Tempo
+[메트릭]  Prometheus    → (scrape)
+```
+
+에이전트를 신호 유형마다 별도로 운영해야 한다.
+Kubernetes에서는 DaemonSet(Promtail) + Deployment(OTel Collector)를 따로 관리하게 된다.
+
+**Alloy를 사용할 때의 구성:**
+
+```
+[로그]   Alloy (loki.source.kubernetes)   → Loki
+[트레이스] Alloy (otelcol.receiver.otlp)   → Tempo
+[메트릭]  Alloy (prometheus.scrape, 선택)  → Prometheus
+```
+
+Alloy 하나로 모든 신호를 처리한다. River 언어로 파이프라인 컴포넌트를 조합하는 방식이라
+수집 → 변환 → 전달 흐름을 코드로 명시적으로 표현할 수 있다.
+
+| 항목 | Promtail | Grafana Alloy |
+|---|---|---|
+| 유지보수 상태 | Deprecated (2024) | 활성 개발 중 |
+| 처리 가능 신호 | 로그만 | 로그 · 트레이스 · 메트릭 |
+| OTLP 수신 | 불가 | 가능 (gRPC 4317 · HTTP 4318) |
+| 설정 방식 | YAML | River (컴포넌트 파이프라인) |
+| Kubernetes 로그 수집 | DaemonSet 필수 (파일 마운트) | Deployment 가능 (K8s API 스트리밍) |
+| 에이전트 수 | 신호 유형마다 별도 | 1개로 통합 |
+
+> **이 프로젝트에서 Alloy를 선택한 핵심 이유:**
+> NestJS 앱이 OTLP로 트레이스를 전송하는데, Promtail은 OTLP를 수신할 수 없다.
+> Alloy는 로그 수집과 OTLP 수신을 동시에 담당해 에이전트를 하나로 유지한다.
 
 ---
 
@@ -73,8 +117,9 @@ mindmap
         instrumentation.ts<br/>OTel SDK 초기화
     k8s
       app.yaml<br/>Deployment · Service · ServiceMonitor
-      prometheus-values.yaml
+      kube-prometheus-stack-values.yaml
       loki-values.yaml
+      tempo-values.yaml
       alloy-values.yaml
     k6
       helpers.js<br/>공통 시나리오 · 메트릭
@@ -207,8 +252,8 @@ Alloy가 Pod stdout을 수집해 Loki로 전달한다.
 - **메트릭 전송:** `http://alloy.monitoring.svc.cluster.local:4318/v1/metrics`
 - **자동 계측:** HTTP, Express 요청/응답 자동 스팬 생성
 
-> 현재 Alloy는 수신한 OTLP 데이터를 디버그 로그로 출력한다.
-> Tempo 추가 후 `otelcol.exporter.otlphttp` 로 교체하면 트레이스 저장이 가능하다.
+> Alloy는 수신한 트레이스를 `otelcol.exporter.otlp "tempo"` 를 통해 Tempo로 전달한다.
+> 메트릭은 `otelcol.exporter.debug` 로 Alloy 로그에 출력된다 (`kubectl logs` 로 수신 여부 확인 가능).
 
 ---
 
@@ -245,7 +290,8 @@ flowchart TD
     B --> C[Helm repo 추가 · 업데이트]
     C --> D[Prometheus 설치\nkube-prometheus-stack]
     D --> E[Loki 설치\nSingleBinary + MinIO]
-    E --> F[Alloy 설치\n로그 수집 + OTLP 수신]
+    E --> T[Tempo 설치\n모노리틱 + 로컬 스토리지]
+    T --> F[Alloy 설치\n로그 수집 + OTLP → Tempo]
     F --> G[NestJS 앱 빌드 · 배포\nDocker + kubectl apply]
     G --> H([검증])
 
@@ -276,7 +322,7 @@ helm repo update
 ```bash
 helm install prometheus prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
-  --values k8s/prometheus-values.yaml \
+  --values k8s/kube-prometheus-stack-values.yaml \
   --wait
 ```
 
@@ -304,7 +350,35 @@ kubectl exec -n monitoring loki-0 -- wget -qO- http://localhost:3100/ready
 # 출력: ready
 ```
 
-### 5단계 — Alloy 설치
+### 5단계 — Tempo 설치
+
+> **`level=WARN msg="this chart is deprecated"` 경고에 대해**
+>
+> `grafana/tempo` 차트는 공식 deprecated 처리되었다. 후속 차트는 `grafana/tempo-distributed`이지만,
+> 분산 모드용 설계라 distributor · ingester · querier 등 여러 컴포넌트를 별도 파드로 띄우고
+> **ReadWriteMany PVC 또는 공유 오브젝트 스토리지(S3)가 필요**하다.
+> Minikube 기본 StorageClass(hostPath)는 ReadWriteOnce만 지원하므로 `tempo-distributed`는 단일 노드에서 동작하지 않는다.
+>
+> `grafana/tempo` 차트는 deprecated 경고만 출력될 뿐 기능은 정상 동작한다.
+> 학습 환경에서는 이 경고를 무시하고 그대로 사용한다.
+
+```bash
+helm install tempo grafana/tempo \
+  --namespace monitoring \
+  --values k8s/tempo-values.yaml \
+  --wait
+```
+
+설치 확인:
+```bash
+kubectl get pods -n monitoring -l "app.kubernetes.io/name=tempo"
+
+# 헬스체크 (200 OK 반환)
+kubectl exec -n monitoring deployment/tempo -- wget -qO- http://localhost:3200/ready
+# 출력: ready
+```
+
+### 6단계 — Alloy 설치
 
 ```bash
 helm install alloy grafana/alloy \
@@ -313,7 +387,7 @@ helm install alloy grafana/alloy \
   --wait
 ```
 
-### 6단계 — 전체 상태 확인
+### 7단계 — 전체 상태 확인
 
 ```bash
 kubectl get pods -n monitoring
@@ -336,14 +410,17 @@ flowchart LR
     subgraph OTLP["OTLP 수신 파이프라인"]
         direction LR
         O1["otelcol.receiver.otlp\n:4317 gRPC · :4318 HTTP"]
+        OT["otelcol.exporter.otlp\n'tempo'"]
         O2["otelcol.exporter.debug\n'default'"]
-        O1 --> O2
+        O1 -->|"traces"| OT
+        O1 -->|"metrics"| O2
     end
 
     K8S[("K8s API\npods/log")] -->|"log stream"| D1
     D4 -->|"push"| LOKI[("Loki\n:3100")]
 
     APP["NestJS App"] -->|"OTLP HTTP"| O1
+    OT -->|"OTLP gRPC :4317"| TEMPO[("Tempo\n:3200")]
     O2 -->|"stdout"| LOG_OUT["Alloy 로그\n(kubectl logs)"]
 ```
 
@@ -499,6 +576,30 @@ kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
 2. Label filter: `namespace = monitoring`
 3. 또는 직접 LogQL 입력: `{namespace="monitoring"} |= "ERROR"`
 
+### 트레이스 조회 (Tempo)
+
+1. **Explore** → 데이터소스 `Tempo` 선택
+2. **Search** 탭에서 서비스 이름 `nestjs-sample` 선택 → **Run query**
+3. 트레이스 목록에서 항목 클릭 → 스팬 타임라인 확인
+
+**TraceQL 예시:**
+```traceql
+# nestjs-sample 서비스의 모든 트레이스
+{ resource.service.name = "nestjs-sample" }
+
+# 특정 HTTP 경로 트레이스만 조회
+{ resource.service.name = "nestjs-sample" && span.http.target = "/slow" }
+
+# 100ms 이상 걸린 스팬 조회
+{ resource.service.name = "nestjs-sample" && duration > 100ms }
+```
+
+**Trace → Log 연동 (TraceID로 로그 추적):**
+
+스팬 상세 화면 우측 **Logs** 버튼 클릭 → 해당 TraceID를 포함하는 Loki 로그로 바로 이동한다.
+
+> `kube-prometheus-stack-values.yaml`에 `tracesToLogsV2` 설정이 활성화되어 있어 자동으로 연결된다.
+
 ---
 
 ## Lens로 클러스터 관리
@@ -606,7 +707,7 @@ kubectl describe pod -n monitoring \
   | grep -A5 "Events:"
 ```
 
-#### 해결 — `prometheus-values.yaml`에 tolerations 추가
+#### 해결 — `kube-prometheus-stack-values.yaml`에 tolerations 추가
 
 ```yaml
 prometheus-node-exporter:
@@ -619,7 +720,7 @@ helm uninstall prometheus -n monitoring
 
 helm install prometheus prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
-  --values k8s/prometheus-values.yaml \
+  --values k8s/kube-prometheus-stack-values.yaml \
   --wait
 ```
 
@@ -884,4 +985,45 @@ kubectl port-forward svc/alloy 12345:12345 -n monitoring
 # Alloy 로그에서 수신된 트레이스 확인 (otelcol.exporter.debug 출력)
 kubectl logs -n monitoring -l "app.kubernetes.io/name=alloy" -f \
   | grep "ResourceSpans"
+```
+
+---
+
+### kubectl "connection refused" — kubeconfig stale 포트
+
+#### 증상
+
+```
+Error: UPGRADE FAILED: kubernetes cluster unreachable:
+Get "https://127.0.0.1:58719/version": dial tcp 127.0.0.1:58719: connect: connection refused
+```
+
+#### 원인
+
+minikube는 재시작 시 API 서버 포트가 변경될 수 있다.
+minikube 자체는 정상 실행 중이지만, kubeconfig가 이전 포트를 그대로 참조하고 있어 kubectl이 연결에 실패한다.
+
+```
+minikube apiserver : 127.0.0.1:61261  (실제)
+kubeconfig server  : 127.0.0.1:58719  (stale → 연결 거부)
+```
+
+#### 진단
+
+```bash
+# minikube 상태 확인 (host/kubelet/apiserver 모두 Running 이면 minikube 자체는 정상)
+minikube status
+
+# kubeconfig에 등록된 server 주소 확인
+kubectl config view --minify | grep server
+```
+
+#### 해결
+
+```bash
+minikube update-context
+
+# 포트가 갱신됐는지 확인
+kubectl config view --minify | grep server
+kubectl get nodes
 ```
