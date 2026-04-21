@@ -14,23 +14,23 @@ loki:
   auth_enabled: false
 
   commonConfig:
-    replication_factor: 1   # 단일 인스턴스이므로 복제 불필요
+    replication_factor: 1 # 단일 인스턴스이므로 복제 불필요
 
   # S3 호환 스토리지 설정 (내부 MinIO 사용)
   storage:
     type: s3
     bucketNames:
-      chunks: chunks   # 실제 로그 데이터
-      ruler: ruler     # 알림 룰
-      admin: admin     # 관리 데이터
+      chunks: chunks # 실제 로그 데이터
+      ruler: ruler # 알림 룰
+      admin: admin # 관리 데이터
     s3:
       # MinIO 서비스 주소 (릴리즈 이름 loki 기준)
       endpoint: http://loki-minio.monitoring.svc.cluster.local:9000
       region: us-east-1
       accessKeyId: loki
       secretAccessKey: supersecret
-      s3ForcePathStyle: true   # MinIO는 경로 기반 접근 필요
-      insecure: true           # TLS 미사용 (내부 통신)
+      s3ForcePathStyle: true # MinIO는 경로 기반 접근 필요
+      insecure: true # TLS 미사용 (내부 통신)
 
   # 인덱스 스키마 v13 (TSDB) - Loki 3.x 권장 설정
   schemaConfig:
@@ -62,7 +62,7 @@ singleBinary:
   # "read-only file system" 에러로 크래시된다.
   persistence:
     enabled: true
-    storageClass: standard   # Minikube 기본 StorageClass (hostPath 기반)
+    storageClass: standard # Minikube 기본 StorageClass (hostPath 기반)
     size: 5Gi
 
 # ----------------------------------------------------------------
@@ -125,4 +125,4 @@ minio:
 
   # 파드 재시작 시 데이터 초기화 허용 (학습 환경)
   persistence:
-    enabled: false
+    enabled: true
