@@ -15,20 +15,20 @@ grafana:
   adminPassword: admin
 
   service:
-    type: NodePort   # Minikube에서 브라우저 접근 시 필요
+    type: NodePort # Minikube에서 브라우저 접근 시 필요
 
   # 재시작 시 초기화되어도 무방한 학습 환경
   persistence:
     enabled: false
 
   # Drilldown 앱 플러그인
-  # grafana-traces-app : Traces Drilldown (트레이스 탐색)
-  # grafana-logs-app   : Logs Drilldown (로그 탐색)
-  # grafana-metrics-app: Metrics Drilldown (메트릭 탐색)
+  # grafana-exploretraces-app : Traces Drilldown (트레이스 탐색)
+  # grafana-lokiexplore-app   : Logs Drilldown (로그 탐색)
+  # grafana-metricsdrilldown-app: Metrics Drilldown (메트릭 탐색)
   plugins:
-    - grafana-traces-app
-    - grafana-logs-app
-    - grafana-metrics-app
+    - grafana-exploretraces-app
+    - grafana-lokiexplore-app
+    - grafana-metricsdrilldown-app
 
   # 데이터소스 자동 등록 (Explore에서 바로 조회 가능)
   additionalDataSources:
@@ -64,7 +64,7 @@ grafana:
 # ----------------------------------------------------------------
 prometheus:
   prometheusSpec:
-    retention: 24h   # 디스크 사용량 최소화
+    retention: 24h # 디스크 사용량 최소화
 
     # Tempo metrics generator → Prometheus remote write 수신 허용
     enableRemoteWriteReceiver: true
@@ -114,7 +114,7 @@ kube-state-metrics:
 # ----------------------------------------------------------------
 prometheus-node-exporter:
   tolerations:
-    - operator: Exists   # 모든 테인트 허용 (Minikube control-plane 포함)
+    - operator: Exists # 모든 테인트 허용 (Minikube control-plane 포함)
   resources:
     requests:
       memory: 32Mi
